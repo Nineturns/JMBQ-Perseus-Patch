@@ -94,70 +94,101 @@ def get_version():
 
 def download_jmbq_perseus_lib():
     global mod_version
+
     repo_owner = "JMBQ"
     repo_name = "azurlane"
     asset_pattern = "MOD_MENU_"
     extract_dir = Path("JMBQ-PerseusLib")
-    suffix_to_cmd = {".rar": ["rar", "x", "-o+"],".zip": ["unzip", "-d"],".7z": ["7zz", "x", "-o"]}
     packages_dir = Path("packages")
 
-    try:
-        api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-        response = requests.get(api_url, timeout=10)
-        response.raise_for_status()
-        release_data = response.json()
-        target_asset = None
-        for asset in release_data.get("assets", []):
-            if asset_pattern in asset["name"] and asset["name"].endswith((".rar", ".zip", ".7z")):
-                target_asset = asset
-                break   
-        if not target_asset:
-            raise ValueError("cant find MOD_MENU")
+    suffix_to_cmd = {
+        ".rar": ["rar", "x", "-o+"],
+        ".zip": ["unzip", "-d"],
+        ".7z": ["7zz", "x"]
+    }
 
-        download_url = target_asset["browser_download_url"]
-        temp_file = Path(f"temp_{target_asset['name']}")
-        exist_mod_file = list(packages_dir.glob(f"{asset_pattern}*.rar")) + \
-                             list(packages_dir.glob(f"{asset_pattern}*.zip")) + \
-                             list(packages_dir.glob(f"{asset_pattern}*.7z"))
-        if exist_mod_file:
-            local_asset_file = exist_mod_file[0]
-            cp_cmd = ["cp", str(local_asset_file), "."]
-            cp_result = subprocess.run(
-                cp_cmd,
-                capture_output=True,
-                text=True
-            )
-            if cp_result.returncode != 0:
-                raise RuntimeError(f"cp failed: {cp_result.stderr}")
-            temp_file = Path(local_asset_file.name)
-        else:
+    temp_file = None
+
+    try:
+        # 1. Try GitHub latest first.
+        try:
+            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
+            logging.info(f"checking GitHub latest release: {api_url}")
+
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
+            release_data = response.json()
+
+            target_asset = None
+            for asset in release_data.get("assets", []):
+                asset_name = asset.get("name", "")
+                if asset_pattern in asset_name and asset_name.endswith((".rar", ".zip", ".7z")):
+                    target_asset = asset
+                    break
+
+            if not target_asset:
+                raise ValueError("cant find MOD_MENU in GitHub latest release")
+
+            download_url = target_asset["browser_download_url"]
+            temp_file = Path(f"temp_{target_asset['name']}")
+
+            logging.info(f"downloading MOD_MENU from GitHub: {target_asset['name']}")
             with requests.get(download_url, stream=True, timeout=30) as r:
                 r.raise_for_status()
                 with open(temp_file, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
+                        if chunk:
+                            f.write(chunk)
+
+            logging.info(f"downloaded GitHub asset: {temp_file}")
+
+        except Exception as github_error:
+            logging.warning(f"GitHub download unavailable: {github_error}")
+
+            # 2. Fallback to local packages.
+            exist_mod_file = (
+                list(packages_dir.glob(f"{asset_pattern}*.rar")) +
+                list(packages_dir.glob(f"{asset_pattern}*.zip")) +
+                list(packages_dir.glob(f"{asset_pattern}*.7z"))
+            )
+
+            if not exist_mod_file:
+                # 3. No local file, fail.
+                raise FileNotFoundError(
+                    f"cant find local MOD_MENU file in {packages_dir}/ "
+                    f"and GitHub latest is unavailable"
+                )
+
+            local_asset_file = sorted(exist_mod_file)[0]
+            temp_file = Path(local_asset_file.name)
+
+            logging.info(f"using local MOD_MENU file: {local_asset_file}")
+            shutil.copy2(local_asset_file, temp_file)
 
         asset_name = temp_file.name
-        version_match = re.search(r"MOD_MENU_([\d\.]+)\.(rar|zip|7z)", asset_name)
+        version_match = re.search(r"MOD_MENU_([\d\.]+)\.(rar|zip|7z)$", asset_name)
+        if not version_match:
+            raise ValueError(f"cant parse mod version from file name: {asset_name}")
+
         mod_version = version_match.group(1)
         logging.info(f"mod_version: {mod_version}")
 
         extract_dir.mkdir(exist_ok=True)
-        suffix = Path(asset_name).suffix
-        cmd = suffix_to_cmd[suffix]
+        suffix = temp_file.suffix
+
+        if suffix not in suffix_to_cmd:
+            raise ValueError(f"unsupported MOD_MENU archive type: {suffix}")
+
+        cmd = suffix_to_cmd[suffix].copy()
 
         if suffix == ".zip":
-            cmd += [str(extract_dir), str(temp_file)]
+            cmd += [str(temp_file), "-d", str(extract_dir)]
         elif suffix == ".7z":
-            cmd += [str(extract_dir), str(temp_file)]
-            subprocess.run(
-                ["mv", f"{str(extract_dir)}/*/*", str(extract_dir)],
-                capture_output=True,
-                text=True
-            )
+            cmd += [f"-o{str(extract_dir)}", str(temp_file)]
         else:
             cmd += [str(temp_file), str(extract_dir)]
 
+        logging.info(f"extracting MOD_MENU: {' '.join(cmd)}")
         result = subprocess.run(
             cmd,
             capture_output=True,
@@ -165,12 +196,10 @@ def download_jmbq_perseus_lib():
         )
 
         if result.returncode != 0:
-            raise RuntimeError(f"{result.stderr}")
-                
+            raise RuntimeError(f"extract failed: {result.stderr}")
+
     finally:
-        logging.info('download completed.')
-        #if 'temp_file' in locals() and temp_file.exists():
-        #    temp_file.unlink()
+        logging.info("download completed.")
 
 
 '''
