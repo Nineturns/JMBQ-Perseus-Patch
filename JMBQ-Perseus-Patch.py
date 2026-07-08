@@ -232,50 +232,79 @@ def build_perseus_lib(do_clean=False):
     os.chdir('..')
 '''
 
-def extract_from_packages():
-    '''
-    if skip and os.path.isfile(f'{pkg}.apk'):
-        logging.info(f'{pkg}.apk already exists, skipping')
-        return
-    '''
+# def extract_from_packages():
+#     '''
+#     if skip and os.path.isfile(f'{pkg}.apk'):
+#         logging.info(f'{pkg}.apk already exists, skipping')
+#         return
+#     '''
 
-    logging.info('searching for package archives in packages/')
-    # Prefer archives that start with the pkg name
-    candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', f'{pkg}*')))
-    if not candidates:
-        # fallback to any zip / 7z in packages
-        candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', '*.zip')) +
-                            glob.glob(os.path.join(rootdir, 'packages', '*.7z')) +
-                            glob.glob(os.path.join(rootdir, 'packages', '*part*')))
+#     logging.info('searching for package archives in packages/')
+#     # Prefer archives that start with the pkg name
+#     candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', f'{pkg}*')))
+#     if not candidates:
+#         # fallback to any zip / 7z in packages
+#         candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', '*.zip')) +
+#                             glob.glob(os.path.join(rootdir, 'packages', '*.7z')) +
+#                             glob.glob(os.path.join(rootdir, 'packages', '*part*')))
 
-    if not candidates:
-        logging.error('No package archives found in packages/; expected something like com.bilibili.AzurLane.zip or split archives.')
-        exit(1)
+#     if not candidates:
+#         logging.error('No package archives found in packages/; expected something like com.bilibili.AzurLane.zip or split archives.')
+#         exit(1)
 
-    archive = candidates[0]
-    logging.info(f'Using archive: {archive}')
+#     archive = candidates[0]
+#     logging.info(f'Using archive: {archive}')
 
-    # Try to use bundled 7zz first
-    sevenz = executable_path('7zz')
-    if os.path.isfile(sevenz):
-        logging.info(f'extracting with {sevenz}')
-        proc = run([sevenz, 'x', '-y', archive], stdout=PIPE, stderr=STDOUT, text=True)
-        if proc.returncode != 0:
-            logging.error('7zz extraction failed')
-            print(proc.stdout, file=sys.stderr)
-            exit(1)
-    else:
-        # fallback to unzip
-        logging.info('7zz not found in bin/, falling back to system unzip')
-        proc = run(['unzip', '-o', archive, '-d', '.'], stdout=PIPE, stderr=STDOUT, text=True)
-        if proc.returncode != 0:
-            logging.error('unzip extraction failed')
-            print(proc.stdout, file=sys.stderr)
-            exit(1)
+#     # Try to use bundled 7zz first
+#     sevenz = executable_path('7zz')
+#     if os.path.isfile(sevenz):
+#         logging.info(f'extracting with {sevenz}')
+#         proc = run([sevenz, 'x', '-y', archive], stdout=PIPE, stderr=STDOUT, text=True)
+#         if proc.returncode != 0:
+#             logging.error('7zz extraction failed')
+#             print(proc.stdout, file=sys.stderr)
+#             exit(1)
+#     else:
+#         # fallback to unzip
+#         logging.info('7zz not found in bin/, falling back to system unzip')
+#         proc = run(['unzip', '-o', archive, '-d', '.'], stdout=PIPE, stderr=STDOUT, text=True)
+#         if proc.returncode != 0:
+#             logging.error('unzip extraction failed')
+#             print(proc.stdout, file=sys.stderr)
+#             exit(1)
 
-    if not os.path.isfile(f'{pkg}.apk'):
-        logging.error(f'After extraction could not find {pkg}.apk in apk_build/ (extracted files: {os.listdir(".")})')
-        exit(1)
+#     if not os.path.isfile(f'{pkg}.apk'):
+#         logging.error(f'After extraction could not find {pkg}.apk in apk_build/ (extracted files: {os.listdir(".")})')
+#         exit(1)
+
+
+def apk_from_url():
+    """
+    # Download Azur Lane
+    if [ ! -f "com.bilibili.AzurLane.apk" ]; then
+        echo "Get Azur Lane apk"
+
+        # eg: wget "your download link" -O "your packge name.apk" -q
+        #if you want to patch .xapk, change the suffix here to wget "your download link" -O "your packge name.xapk" -q
+        wget "https://drive.usercontent.google.com/download?id=1G9Zbl-SKHmP75r4fARPHbfLtq3HUvvdM&export=download&authuser=0&confirm=t&uuid=0c1b5fe1-1269-46fd-ad34-0c7f003b2cd4&at=ABswASZTq2RdoIGvdAs_OdjzQ852%3A1783422045535" -O com.bilibili.AzurLane.apk -q
+        echo "apk downloaded !"
+        
+        # if you can only download .xapk file uncomment 2 lines below. (delete the '#')
+        #unzip -o com.YoStarJP.AzurLane.xapk -d AzurLane
+        #cp AzurLane/com.YoStarJP.AzurLane.apk .
+    fi
+    """
+    url = "https://drive.usercontent.google.com/download?id=1G9Zbl-SKHmP75r4fARPHbfLtq3HUvvdM&export=download&authuser=0&confirm=t&uuid=0c1b5fe1-1269-46fd-ad34-0c7f003b2cd4&at=ABswASZTq2RdoIGvdAs_OdjzQ852%3A1783422045535"
+    apk_filename = f"{pkg}.apk"
+    if not os.path.isfile(apk_filename):
+        logging.info(f'Downloading {apk_filename} from {url}')
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+        with open(apk_filename, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        logging.info(f'Downloaded {apk_filename}')
 
 
 def decompile_apk():
@@ -395,7 +424,8 @@ def main():
     download_jmbq_perseus_lib()
     #build_perseus_lib()
     mkcd('apk_build')
-    extract_from_packages()
+    # extract_from_packages()
+    apk_from_url()
     get_version()
     decompile_apk()
     copy_perseus_libs()
