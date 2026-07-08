@@ -32,12 +32,10 @@ def is_windows() -> bool:
     return os.name in ['nt']
 
 
-
 def mkcd(d):
     if not os.path.isdir(d):
         os.mkdir(d)
     os.chdir(d)
-
 
 
 def executable_path(e, absolute=True):
@@ -93,29 +91,51 @@ def get_version():
         logging.warning(f'Using UTC-now fallback version: {pkg_version}')
 
 def download_jmbq_perseus_lib():
+    """
+    从packages目录或Github JMBQ/azurlane下载MOD_MENU压缩包，并解压到JMBQ-PerseusLib目录中。
+    """
     global mod_version
 
     repo_owner = "JMBQ"
     repo_name = "azurlane"
     asset_pattern = "MOD_MENU_"
+    mod_dir = Path("patch")
     extract_dir = Path("JMBQ-PerseusLib")
     packages_dir = Path("packages")
+    mod_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
     suffix_to_cmd = {
-        ".rar": ["rar", "x", "-o+"],
+        ".rar": ["unrar", "x"],
         ".zip": ["unzip"],
-        ".7z": ["7zz", "x"]
+        ".7z": ["7z", "x"]
     }
 
     temp_file = None
 
     try:
-        # 1. Try GitHub latest first.
         try:
-            api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-            logging.info(f"checking GitHub latest release: {api_url}")
+            # 1. 检查本地patch目录
+            exist_mod_file = (
+                list(mod_dir.glob(f"{asset_pattern}*.rar")) +
+                list(mod_dir.glob(f"{asset_pattern}*.zip")) +
+                list(mod_dir.glob(f"{asset_pattern}*.7z"))
+            )
 
-            response = requests.get(api_url, timeout=10)
+            if not exist_mod_file:
+                logging.info(f"cant find MOD_MENU in {mod_dir}/, checking GitHub latest release")
+                raise FileNotFoundError("local MOD not Found")
+
+            local_asset_file = sorted(exist_mod_file)[0]
+            temp_file = Path(local_asset_file.name)
+
+            logging.info(f"using local MOD_MENU file: {local_asset_file}")
+            shutil.copy2(local_asset_file, temp_file)
+            
+        except FileNotFoundError:
+            # 2. 如果本地没有，尝试从GitHub下载最新release
+            logging.info(f"checking GitHub latest release: {mod_url}")
+
+            response = requests.get(mod_url, timeout=10)
             response.raise_for_status()
             release_data = response.json()
 
@@ -127,7 +147,8 @@ def download_jmbq_perseus_lib():
                     break
 
             if not target_asset:
-                raise ValueError("cant find MOD_MENU in GitHub latest release")
+                logging.info("cant find MOD_MENU in GitHub latest release")
+                raise FileNotFoundError("cant find MOD_MENU in GitHub latest release")
 
             download_url = target_asset["browser_download_url"]
             temp_file = Path(f"temp_{target_asset['name']}")
@@ -142,29 +163,7 @@ def download_jmbq_perseus_lib():
 
             logging.info(f"downloaded GitHub asset: {temp_file}")
 
-        except Exception as github_error:
-            logging.warning(f"GitHub download unavailable: {github_error}")
-
-            # 2. Fallback to local packages.
-            exist_mod_file = (
-                list(packages_dir.glob(f"{asset_pattern}*.rar")) +
-                list(packages_dir.glob(f"{asset_pattern}*.zip")) +
-                list(packages_dir.glob(f"{asset_pattern}*.7z"))
-            )
-
-            if not exist_mod_file:
-                # 3. No local file, fail.
-                raise FileNotFoundError(
-                    f"cant find local MOD_MENU file in {packages_dir}/ "
-                    f"and GitHub latest is unavailable"
-                )
-
-            local_asset_file = sorted(exist_mod_file)[0]
-            temp_file = Path(local_asset_file.name)
-
-            logging.info(f"using local MOD_MENU file: {local_asset_file}")
-            shutil.copy2(local_asset_file, temp_file)
-
+        # 3. 解压MOD_MENU补丁
         asset_name = temp_file.name
         version_match = re.search(r"MOD_MENU_([\d\.]+)\.(rar|zip|7z)$", asset_name)
         if not version_match:
@@ -184,9 +183,9 @@ def download_jmbq_perseus_lib():
         if suffix == ".zip":
             cmd += [str(temp_file), "-d", str(extract_dir)]
         elif suffix == ".7z":
-            cmd += [f"-o{str(extract_dir)}", str(temp_file)]
+            cmd += [str(temp_file), "-o", str(extract_dir)]
         else:
-            cmd += [str(temp_file), str(extract_dir)]
+            cmd += [str(temp_file), str(extract_dir),"-y"]
 
         logging.info(f"extracting MOD_MENU: {' '.join(cmd)}")
         result = subprocess.run(
@@ -201,99 +200,54 @@ def download_jmbq_perseus_lib():
     finally:
         logging.info("download completed.")
 
+"""
+def extract_from_packages():
+    '''
+    if skip and os.path.isfile(f'{pkg}.apk'):
+        logging.info(f'{pkg}.apk already exists, skipping')
+        return
+    '''
 
-'''
-def build_perseus_lib(do_clean=False):
-    logging.info(f'{"cleaning" if do_clean else "building"} perseus libs')
+    logging.info('searching for package archives in packages/')
+    # Prefer archives that start with the pkg name
+    candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', f'{pkg}*')))
+    if not candidates:
+        # fallback to any zip / 7z in packages
+        candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', '*.zip')) +
+                            glob.glob(os.path.join(rootdir, 'packages', '*.7z')) +
+                            glob.glob(os.path.join(rootdir, 'packages', '*part*')))
 
-    os.chdir('JMBQ-PerseusLib')
-
-    cmd = [f'ndk-build{".cmd" if is_windows() else ""}',
-           'NDK_PROJECT_PATH=./src',
-           'NDK_APPLICATION_MK=./src/Application.mk',
-           'APP_BUILD_SCRIPT=./src/Android.mk',
-           'APP_PLATFORM=android-21',
-           f'-j{multiprocessing.cpu_count()}'] + (['clean'] if do_clean else [])
-
-    ndk_proc = run(cmd, capture_output=True, text=True)
-
-    output = ndk_proc.stdout
-    return_code = ndk_proc.returncode
-
-    if return_code != 0:
-        logging.error('ndk-build failed')
-
-        print("======== ndk-build stdout ========", file=sys.stderr)
-        print(output, file=sys.stderr)
-        print("======== ndk-build stderr ========", file=sys.stderr)
-        print(ndk_proc.stderr, file=sys.stderr)
+    if not candidates:
+        logging.error('No package archives found in packages/; expected something like com.bilibili.AzurLane.zip or split archives.')
         exit(1)
 
-    os.chdir('..')
-'''
+    archive = candidates[0]
+    logging.info(f'Using archive: {archive}')
 
-# def extract_from_packages():
-#     '''
-#     if skip and os.path.isfile(f'{pkg}.apk'):
-#         logging.info(f'{pkg}.apk already exists, skipping')
-#         return
-#     '''
+    # Try to use bundled 7zz first
+    sevenz = executable_path('7zz')
+    if os.path.isfile(sevenz):
+        logging.info(f'extracting with {sevenz}')
+        proc = run([sevenz, 'x', '-y', archive], stdout=PIPE, stderr=STDOUT, text=True)
+        if proc.returncode != 0:
+            logging.error('7zz extraction failed')
+            print(proc.stdout, file=sys.stderr)
+            exit(1)
+    else:
+        # fallback to unzip
+        logging.info('7zz not found in bin/, falling back to system unzip')
+        proc = run(['unzip', '-o', archive, '-d', '.'], stdout=PIPE, stderr=STDOUT, text=True)
+        if proc.returncode != 0:
+            logging.error('unzip extraction failed')
+            print(proc.stdout, file=sys.stderr)
+            exit(1)
 
-#     logging.info('searching for package archives in packages/')
-#     # Prefer archives that start with the pkg name
-#     candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', f'{pkg}*')))
-#     if not candidates:
-#         # fallback to any zip / 7z in packages
-#         candidates = sorted(glob.glob(os.path.join(rootdir, 'packages', '*.zip')) +
-#                             glob.glob(os.path.join(rootdir, 'packages', '*.7z')) +
-#                             glob.glob(os.path.join(rootdir, 'packages', '*part*')))
-
-#     if not candidates:
-#         logging.error('No package archives found in packages/; expected something like com.bilibili.AzurLane.zip or split archives.')
-#         exit(1)
-
-#     archive = candidates[0]
-#     logging.info(f'Using archive: {archive}')
-
-#     # Try to use bundled 7zz first
-#     sevenz = executable_path('7zz')
-#     if os.path.isfile(sevenz):
-#         logging.info(f'extracting with {sevenz}')
-#         proc = run([sevenz, 'x', '-y', archive], stdout=PIPE, stderr=STDOUT, text=True)
-#         if proc.returncode != 0:
-#             logging.error('7zz extraction failed')
-#             print(proc.stdout, file=sys.stderr)
-#             exit(1)
-#     else:
-#         # fallback to unzip
-#         logging.info('7zz not found in bin/, falling back to system unzip')
-#         proc = run(['unzip', '-o', archive, '-d', '.'], stdout=PIPE, stderr=STDOUT, text=True)
-#         if proc.returncode != 0:
-#             logging.error('unzip extraction failed')
-#             print(proc.stdout, file=sys.stderr)
-#             exit(1)
-
-#     if not os.path.isfile(f'{pkg}.apk'):
-#         logging.error(f'After extraction could not find {pkg}.apk in apk_build/ (extracted files: {os.listdir(".")})')
-#         exit(1)
-
+    if not os.path.isfile(f'{pkg}.apk'):
+        logging.error(f'After extraction could not find {pkg}.apk in apk_build/ (extracted files: {os.listdir(".")})')
+        exit(1)
+"""
 
 def apk_from_url():
-    """
-    # Download Azur Lane
-    if [ ! -f "com.bilibili.AzurLane.apk" ]; then
-        echo "Get Azur Lane apk"
-
-        # eg: wget "your download link" -O "your packge name.apk" -q
-        #if you want to patch .xapk, change the suffix here to wget "your download link" -O "your packge name.xapk" -q
-        wget "https://drive.usercontent.google.com/download?id=1G9Zbl-SKHmP75r4fARPHbfLtq3HUvvdM&export=download&authuser=0&confirm=t&uuid=0c1b5fe1-1269-46fd-ad34-0c7f003b2cd4&at=ABswASZTq2RdoIGvdAs_OdjzQ852%3A1783422045535" -O com.bilibili.AzurLane.apk -q
-        echo "apk downloaded !"
-        
-        # if you can only download .xapk file uncomment 2 lines below. (delete the '#')
-        #unzip -o com.YoStarJP.AzurLane.xapk -d AzurLane
-        #cp AzurLane/com.YoStarJP.AzurLane.apk .
-    fi
-    """
     url = "https://drive.usercontent.google.com/download?id=1G9Zbl-SKHmP75r4fARPHbfLtq3HUvvdM&export=download&authuser=0&confirm=t&uuid=0c1b5fe1-1269-46fd-ad34-0c7f003b2cd4&at=ABswASZTq2RdoIGvdAs_OdjzQ852%3A1783422045535"
     apk_filename = f"{pkg}.apk"
     if not os.path.isfile(apk_filename):
