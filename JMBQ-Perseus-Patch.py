@@ -99,7 +99,8 @@ def download_jmbq_perseus_lib():
     repo_owner = "JMBQ"
     repo_name = "azurlane"
     asset_pattern = "MOD_MENU_"
-    mod_dir = Path("mod")
+    mod_dir = Path("patch")
+    extract_dir = Path("JMBQ-PerseusLib")
     mod_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
     suffix_to_cmd = {
