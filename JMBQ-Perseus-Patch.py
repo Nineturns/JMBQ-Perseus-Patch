@@ -195,6 +195,11 @@ def download_jmbq_perseus_lib():
 
         if result.returncode != 0:
             raise RuntimeError(f"extract failed: {result.stderr}")
+    
+    except Exception as e:
+        logging.error(f"Error during download or extraction: {e}")
+        print(f"Error: {e}", file=sys.stderr)
+        raise Exception("Failed to download or extract MOD_MENU") from e
 
     finally:
         logging.info("download completed.")
