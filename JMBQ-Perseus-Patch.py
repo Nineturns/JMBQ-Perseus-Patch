@@ -103,7 +103,7 @@ def download_jmbq_perseus_lib():
 
     suffix_to_cmd = {
         ".rar": ["rar", "x", "-o+"],
-        ".zip": ["unzip", "-d"],
+        ".zip": ["unzip"],
         ".7z": ["7zz", "x"]
     }
 
