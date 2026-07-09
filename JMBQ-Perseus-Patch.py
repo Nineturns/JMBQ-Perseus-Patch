@@ -92,21 +92,21 @@ def get_version():
 
 def download_jmbq_perseus_lib():
     """
-    从packages目录或Github JMBQ/azurlane下载MOD_MENU压缩包，并解压到JMBQ-PerseusLib目录中。
+    从mod目录或Github JMBQ/azurlane下载MOD_MENU压缩包，并解压到JMBQ-PerseusLib目录中。
     """
     global mod_version
 
     repo_owner = "JMBQ"
     repo_name = "azurlane"
     asset_pattern = "MOD_MENU_"
-    mod_dir = Path("patch")
+    mod_dir = Path("mod")
     extract_dir = Path("JMBQ-PerseusLib")
     mod_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
 
     suffix_to_cmd = {
         ".rar": ["unrar", "x"],
         ".zip": ["unzip"],
-        ".7z": ["7z", "x"]
+        ".7z": ["7zz", "x"]
     }
 
     temp_file = None
@@ -182,7 +182,7 @@ def download_jmbq_perseus_lib():
         if suffix == ".zip":
             cmd += [str(temp_file), "-d", str(extract_dir)]
         elif suffix == ".7z":
-            cmd += [str(temp_file), "-o", str(extract_dir)]
+            cmd += [str(temp_file), f"-o{str(extract_dir)}"]
         else:
             cmd += [str(temp_file), str(extract_dir),"-y"]
 
