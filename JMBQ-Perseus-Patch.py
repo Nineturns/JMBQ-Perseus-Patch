@@ -285,7 +285,8 @@ def copy_perseus_libs():
 
 def patch():
     logging.info('patching decompiled sources')
-    bbox(f"sh {os.path.join(rootdir, 'scripts', 'patch.sh')}")
+    bbox(r'sed -i "/.method public constructor <init>()V/,/.end method/ s#    .locals 0#    .locals 0\n    invoke-static {}, Lcom/android/support/Main;->Start()V#" com.bilibili.AzurLane/smali_classes3/com/unity3d/player/UnityPlayerActivity.smali')
+    bbox(r'sed -i "s#    </application>#        <service android:name=\"com.android.support.Launcher\" android:enabled=\"true\" android:exported=\"false\" android:stopWithTask=\"true\"/>\n    </application>\n    <uses-permission android:name=\"android.permission.SYSTEM_ALERT_WINDOW\"/>#" com.bilibili.AzurLane/AndroidManifest.xml')
 
 
 def rebuild():
