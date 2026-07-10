@@ -2,6 +2,17 @@ name: JMBQ-Perseus Build
 
 on:
   workflow_dispatch:
+    inputs:
+      apk_url:
+        description: 'APK下载链接（只能填入直链，最好使用国外云盘的直链，例如Google云盘）'
+        required: true
+        type: string
+        default: ''
+      mod_url:
+        description: 'JMBQ_MOD_MENU下载链接（填入直链，同上）'
+        required: true
+        type: string
+        default: ''
 
 permissions:
   contents: write

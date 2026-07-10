@@ -14,6 +14,8 @@ import requests
 import subprocess
 from subprocess import Popen, PIPE, STDOUT, run
 from pathlib import Path
+from urllib.parse import unquote,urlparse
+
 
 logging.basicConfig(
     format='%(asctime)s,%(msecs)03d %(levelname)-8s [%(filename)s:%(funcName)s:%(lineno)d] - %(message)s',
@@ -90,10 +92,92 @@ def get_version():
         pkg_version = datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
         logging.warning(f'Using UTC-now fallback version: {pkg_version}')
 
+def download_jmbq(mod_url,fallback="MOD_MENU.zip"):
+    """
+    从url下载MOD_MENU压缩包，并解压到JMBQ-PerseusLib目录中。
+    """
+    global mod_version
+
+    extract_dir = Path("JMBQ-PerseusLib")
+
+    suffix_to_cmd = {
+        ".rar": ["unrar", "x"],
+        ".zip": ["unzip"],
+        ".7z": ["7zz", "x"]
+    }
+
+    temp_file = None
+
+    try:
+        try:
+            logging.info(f"downloading MOD_MENU from url: {mod_url}")
+            response = requests.get(mod_url, stream=True, timeout=30)
+            response.raise_for_status()
+            cd = response.headers.get("Content-Disposition", "")
+            match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
+            if match:
+                filename = unquote(match.group(1))
+            else:
+                filename = Path(unquote(urlparse(mod_url).path)).name or fallback
+            temp_file = Path(f"temp_{filename}")
+
+            with open(temp_file, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            logging.info(f"Downloaded: {temp_file}")
+        except Exception as e:
+            logging.error(f"Error downloading MOD_MENU: {e}")
+            raise
+    
+        # 解压MOD_MENU补丁
+        asset_name = temp_file.name
+        version_match = re.search(r"MOD_MENU_([\d\.]+)\.(rar|zip|7z)$", asset_name)
+        if not version_match:
+            raise ValueError(f"cant parse mod version from file name: {asset_name}")
+
+        mod_version = version_match.group(1)
+        logging.info(f"mod_version: {mod_version}")
+
+        extract_dir.mkdir(exist_ok=True)
+        suffix = temp_file.suffix
+
+        if suffix not in suffix_to_cmd:
+            raise ValueError(f"unsupported MOD_MENU archive type: {suffix}")
+
+        cmd = suffix_to_cmd[suffix].copy()
+
+        if suffix == ".zip":
+            cmd += [str(temp_file), "-d", str(extract_dir)]
+        elif suffix == ".7z":
+            cmd += [str(temp_file), f"-o{str(extract_dir)}"]
+        else:
+            cmd += [str(temp_file), str(extract_dir),"-y"]
+
+        logging.info(f"extracting MOD_MENU: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(f"extract failed: {result.stderr}")
+    
+    except Exception as e:
+        logging.error(f"Error during download or extraction: {e}")
+        print(f"Error: {e}", file=sys.stderr)
+        raise Exception("Failed to download or extract MOD_MENU") from e
+
+    finally:
+        logging.info("download completed.")
+
+"""
 def download_jmbq_perseus_lib():
-    """
+    '''
     从mod目录或Github JMBQ/azurlane下载MOD_MENU压缩包，并解压到JMBQ-PerseusLib目录中。
-    """
+    '''
     global mod_version
 
     repo_owner = "JMBQ"
@@ -203,7 +287,8 @@ def download_jmbq_perseus_lib():
 
     finally:
         logging.info("download completed.")
-
+"""
+        
 """
 def extract_from_packages():
     '''
@@ -251,12 +336,11 @@ def extract_from_packages():
         exit(1)
 """
 
-def apk_from_url():
-    url = "https://drive.usercontent.google.com/download?id=1G9Zbl-SKHmP75r4fARPHbfLtq3HUvvdM&export=download&authuser=0&confirm=t&uuid=0c1b5fe1-1269-46fd-ad34-0c7f003b2cd4&at=ABswASZTq2RdoIGvdAs_OdjzQ852%3A1783422045535"
+def apk_from_url(apk_url:str):
     apk_filename = f"{pkg}.apk"
     if not os.path.isfile(apk_filename):
-        logging.info(f'Downloading {apk_filename} from {url}')
-        response = requests.get(url, stream=True)
+        logging.info(f'Downloading {apk_filename} from {apk_url}')
+        response = requests.get(apk_url, stream=True)
         response.raise_for_status()
         with open(apk_filename, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
@@ -357,6 +441,27 @@ def compress_libs():
     logging.info(f'Written libs archive: {out_zip}')
 '''
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="APK build script arguments from GitHub Actions"
+    )
+
+    parser.add_argument(
+        "--apk-url",
+        dest="apk_url",
+        required=True,
+        help="APK download direct URL"
+    )
+
+    parser.add_argument(
+        "--mod-url",
+        dest="mod_url",
+        required=True,
+        help="JMBQ MOD_MENU download direct URL"
+    )
+
+    return parser.parse_args()
+
 def main():
     '''    
     global skip, quick_rebuild
@@ -379,12 +484,16 @@ def main():
     quick_rebuild = args.quick_rebuild
     '''
 
+    args = parse_args()
+    apk_url = args.apk_url
+    mod_url = args.mod_url
+
     start = time.time()
-    download_jmbq_perseus_lib()
+    download_jmbq(mod_url)
     #build_perseus_lib()
     mkcd('apk_build')
     # extract_from_packages()
-    apk_from_url()
+    apk_from_url(apk_url)
     get_version()
     decompile_apk()
     copy_perseus_libs()
