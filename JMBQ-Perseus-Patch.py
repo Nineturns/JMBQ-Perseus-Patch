@@ -108,70 +108,63 @@ def download_jmbq(mod_url,fallback="MOD_MENU.zip"):
 
     temp_file = None
 
+
     try:
-        try:
-            logging.info(f"downloading MOD_MENU from url: {mod_url}")
-            response = requests.get(mod_url, stream=True, timeout=30)
-            response.raise_for_status()
-            cd = response.headers.get("Content-Disposition", "")
-            match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
-            if match:
-                filename = unquote(match.group(1))
-            else:
-                filename = Path(unquote(urlparse(mod_url).path)).name or fallback
-            temp_file = Path(f"temp_{filename}")
-
-            with open(temp_file, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-
-            logging.info(f"Downloaded: {temp_file}")
-        except Exception as e:
-            logging.error(f"Error downloading MOD_MENU: {e}")
-            raise
-    
-        # 解压MOD_MENU补丁
-        asset_name = temp_file.name
-        version_match = re.search(r"MOD_MENU_([\d\.]+)\.(rar|zip|7z)$", asset_name)
-        if not version_match:
-            raise ValueError(f"cant parse mod version from file name: {asset_name}")
-
-        mod_version = version_match.group(1)
-        logging.info(f"mod_version: {mod_version}")
-
-        extract_dir.mkdir(exist_ok=True)
-        suffix = temp_file.suffix
-
-        if suffix not in suffix_to_cmd:
-            raise ValueError(f"unsupported MOD_MENU archive type: {suffix}")
-
-        cmd = suffix_to_cmd[suffix].copy()
-
-        if suffix == ".zip":
-            cmd += [str(temp_file), "-d", str(extract_dir)]
-        elif suffix == ".7z":
-            cmd += [str(temp_file), f"-o{str(extract_dir)}"]
+        logging.info(f"downloading MOD_MENU from url: {mod_url}")
+        response = requests.get(mod_url, stream=True, timeout=30)
+        response.raise_for_status()
+        cd = response.headers.get("Content-Disposition", "")
+        match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
+        if match:
+            filename = unquote(match.group(1))
         else:
-            cmd += [str(temp_file), str(extract_dir),"-y"]
+            filename = Path(unquote(urlparse(mod_url).path)).name or fallback
+        temp_file = Path(f"temp_{filename}")
 
-        logging.info(f"extracting MOD_MENU: {' '.join(cmd)}")
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True
-        )
+        with open(temp_file, "wb") as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
 
-        if result.returncode != 0:
-            raise RuntimeError(f"extract failed: {result.stderr}")
-    
+        logging.info(f"Downloaded: {temp_file}")
     except Exception as e:
-        logging.error(f"Error during download or extraction: {e}")
-        print(f"Error: {e}", file=sys.stderr)
-        raise Exception("Failed to download or extract MOD_MENU") from e
+        logging.error(f"Error downloading MOD_MENU: {e}")
+        raise
 
-    finally:
-        logging.info("download completed.")
+    # 解压MOD_MENU补丁
+    asset_name = temp_file.name
+    version_match = re.search(r"MOD_MENU_([\d\.]+)\.(rar|zip|7z)$", asset_name)
+    if not version_match:
+        raise ValueError(f"cant parse mod version from file name: {asset_name}")
+
+    mod_version = version_match.group(1)
+    logging.info(f"mod_version: {mod_version}")
+
+    extract_dir.mkdir(exist_ok=True)
+    suffix = temp_file.suffix
+
+    if suffix not in suffix_to_cmd:
+        raise ValueError(f"unsupported MOD_MENU archive type: {suffix}")
+
+    cmd = suffix_to_cmd[suffix].copy()
+
+
+    if suffix == ".zip":
+        cmd += [str(temp_file), "-d", str(extract_dir)]
+    elif suffix == ".7z":
+        cmd += [str(temp_file), f"-o{str(extract_dir)}"]
+    else:
+        cmd += [str(temp_file), str(extract_dir),"-y"]
+
+    logging.info(f"extracting MOD_MENU: {' '.join(cmd)}")
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"extract failed: {result.stderr}")
 
 """
 def download_jmbq_perseus_lib():
