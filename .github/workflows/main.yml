@@ -134,7 +134,7 @@ jobs:
         with:
           repo_token: "${{ secrets.GITHUB_TOKEN }}"
           automatic_release_tag: "latest"
-          draft: true
+          draft: false
           title: "V${{ env.PERSEUS_VERSION }} APK Patched"
           files: |
             apk_build/*patched.apk
